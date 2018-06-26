@@ -9,8 +9,12 @@ locals {
 }
 
 variable "bucket_name" {
-  description = "description"
-  default     = "description"
+  description = "The name of the s3 bucket with the logs"
+}
+
+variable "bucket_encrypted_with_kms" {
+  default     = "false"
+  description = "If the log bucket is encrypted using AWS KMS Managed keys, specify true"
 }
 
 module "label" {
@@ -63,6 +67,7 @@ WITH SERDEPROPERTIES (
 'serialization.format' = '1',
 'input.regex' = '([^ ]*) ([^ ]*) \\[(.*?)\\] ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) \\\"([^ ]*) ([^ ]*) (- |[^ ]*)\\\" (-|[0-9]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) (\"[^\"]*\") ([^ ]*)$'
 ) LOCATION 's3://${data.aws_s3_bucket.default.id}/${var.log_prefix}/'
+TBLPROPERTIES ('has_encrypted_data'='${var.bucket_encrypted_with_kms}');
 QUERYTEXT
 
   lifecycle {
