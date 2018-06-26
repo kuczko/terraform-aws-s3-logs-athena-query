@@ -7,6 +7,15 @@ module "label" {
   delimiter  = "_"
 }
 
+module "label_table" {
+  source     = "git::https://github.com/cloudposse/terraform-terraform-label.git?ref=tags/0.1.2"
+  namespace  = "${var.namespace}"
+  stage      = "${var.stage}"
+  name       = "${var.name}"
+  attributes = ["table"]
+  delimiter  = "_"
+}
+
 # Validate that the bucket exists by putting it in a data source
 data "aws_s3_bucket" "default" {
   bucket = "${var.bucket_name}"
@@ -18,11 +27,12 @@ resource "aws_athena_database" "database" {
 }
 
 resource "aws_athena_named_query" "create_table" {
-  name     = "${module.label.id}_create_table"
-  database = "${aws_athena_database.database.name}"
+  name        = "${module.label.id}_create_table"
+  database    = "${aws_athena_database.database.name}"
+  description = "Create the S3 logs query table"
 
   query = <<QUERYTEXT
-CREATE EXTERNAL TABLE IF NOT EXISTS s3_AccessLogs.Accesslogs(
+CREATE EXTERNAL TABLE IF NOT EXISTS ${aws_athena_database.database.name}.${module.label_table.id}(
 BucketOwner string,
 Bucket string,
 RequestDateTime string,
@@ -46,8 +56,8 @@ VersionId string)
 ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.RegexSerDe'
 WITH SERDEPROPERTIES (
 'serialization.format' = '1',
-'input.regex' = '([^ ]*) ([^ ]*) \\[(.*?)\\] ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) \\\"([^ ]*) ([^ ]*) (- |[^ ]*)\\\" (-|[0-9]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) (\"[^\"]*\") ([^ ]*)$'
-) LOCATION 's3://${data.aws_s3_bucket.default.id}/${var.log_prefix}/'
+'input.regex' = '([^ ]*) ([^ ]*) \\[(.*?)\\] ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) \\\"([^ ]*) ([^ ]*) (- |[^ ]*)\\\" (-|[0-9]*) (-|[0-9]*) ([-0-9]*) ([-0-9]*) ([-0-9]*) ([-0-9]*) ([^ ]*) (\"[^\"]*\") ([^ ]*)$'
+) LOCATION 's3://${data.aws_s3_bucket.default.id}/${local.log_prefix_normalised}/'
 TBLPROPERTIES ('has_encrypted_data'='${var.bucket_encrypted_with_kms}');
 QUERYTEXT
 }
@@ -67,7 +77,7 @@ SELECT Key,
         UserAgent,
         RemoteIp,
         count(*) AS cnt
-FROM Accesslogs
+FROM ${module.label_table.id}
 WHERE regexp_like(RequestURI_operation, 'GET|HEAD')
         AND Requester LIKE '-'
         AND NOT regexp_like(UserAgent, 'Elastic|aws')
@@ -75,10 +85,6 @@ WHERE regexp_like(RequestURI_operation, 'GET|HEAD')
 GROUP BY  RemoteIp, Key, UserAgent, RemoteIp
 ORDER BY cnt DESC LIMIT 10
 QUERYTEXT
-
-  lifecycle {
-    ignore_changes = ["query", "description", "name"]
-  }
 }
 
 resource "aws_athena_named_query" "requests_between_dates" {
@@ -89,17 +95,13 @@ resource "aws_athena_named_query" "requests_between_dates" {
 
   query = <<QUERYTEXT
 SELECT Requester , Operation ,  RequestDateTime
-FROM Accesslogs
+FROM ${module.label_table.id}
 WHERE Operation='REST.GET.OBJECT' AND
 parse_datetime(RequestDateTime,'dd/MMM/yyyy:HH:mm:ss Z') 
 BETWEEN parse_datetime('2016-12-05:16:56:36','yyyy-MM-dd:HH:mm:ss')
 AND 
-parse_datetime('2016-12-05:16:56:40','yyyy-MM-dd:HH:mm:ss');
+parse_datetime('2020-12-05:16:56:40','yyyy-MM-dd:HH:mm:ss');
 QUERYTEXT
-
-  lifecycle {
-    ignore_changes = ["query", "description", "name"]
-  }
 }
 
 resource "aws_athena_named_query" "requests_for_specific_path" {
@@ -111,12 +113,8 @@ resource "aws_athena_named_query" "requests_for_specific_path" {
   query = <<QUERYTEXT
 -- Get distinct s3paths which were accessed
 SELECT DISTINCT(Key) 
-FROM Accesslogs;
+FROM ${module.label_table.id};
 QUERYTEXT
-
-  lifecycle {
-    ignore_changes = ["query", "description", "name"]
-  }
 }
 
 resource "aws_athena_named_query" "requests_since_date_path" {
@@ -128,15 +126,11 @@ resource "aws_athena_named_query" "requests_since_date_path" {
   query = <<QUERYTEXT
 -- Get access count for each s3 path after a given timestamp
 SELECT key, count(*) AS cnt 
-FROM Accesslogs 
-WHERE parse_datetime(RequestDateTime,'dd/MMM/yyyy:HH:mm:ss Z')  > parse_datetime('2016-12-05:16:56:40','yyyy-MM-dd:HH:mm:ss')
+FROM ${module.label_table.id} 
+WHERE parse_datetime(RequestDateTime,'dd/MMM/yyyy:HH:mm:ss Z')  > parse_datetime('2018-01-05:16:56:40','yyyy-MM-dd:HH:mm:ss')
 GROUP BY key
 ORDER BY cnt DESC;
 QUERYTEXT
-
-  lifecycle {
-    ignore_changes = ["query", "description", "name"]
-  }
 }
 
 # Queries from http://aws.mannem.me/?p=1462
