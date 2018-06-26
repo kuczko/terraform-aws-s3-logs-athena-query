@@ -16,10 +16,10 @@ provider "aws" {
 
 # Create a s3 bucket for logging
 module "log_storage" {
-  source    = "git::https://github.com/cloudposse/terraform-aws-s3-log-storage.git?ref=master"
-  name      = "logs"
-  stage     = "prod"
-  namespace = "cp"
+  source        = "git::https://github.com/cloudposse/terraform-aws-s3-log-storage.git?ref=master"
+  name          = "logs"
+  stage         = "prod"
+  namespace     = "cp"
   force_destroy = "true"
 }
 
@@ -47,6 +47,27 @@ resource "aws_s3_bucket" "web" {
     target_bucket = "${module.log_storage.bucket_id}"
     target_prefix = "weblog/"
   }
+}
+
+resource "aws_s3_bucket_policy" "b" {
+  bucket = "${aws_s3_bucket.web.id}"
+
+  policy = <<POLICY
+{
+    "Version": "2008-10-17",
+    "Statement": [
+        {
+            "Sid": "PublicReadForGetTestBucketObjects",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "*"
+            },
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::${aws_s3_bucket.web.id}/*"
+        }
+    ]
+}
+POLICY
 }
 
 resource "aws_s3_bucket_object" "index" {
