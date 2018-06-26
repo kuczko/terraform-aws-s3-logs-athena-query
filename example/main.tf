@@ -89,3 +89,7 @@ resource "aws_s3_bucket_object" "error" {
 output "url" {
   value = "${aws_s3_bucket.web.website_endpoint}"
 }
+
+output "athena_console" {
+  value = "https://console.aws.amazon.com/athena/saved-queries/home?region=us-east-1"
+}
