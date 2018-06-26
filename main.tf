@@ -1,29 +1,10 @@
-variable "log_prefix" {
-  description = "If the bucket has multiple S3 Bucket logs inside it, provide a prefix to select one"
-  default     = ""
-}
-
-locals {
-  # Strip starting and trailing slashes
-  log_prefix_normalised = "${join("/",compact(split("/", var.log_prefix)))}"
-}
-
-variable "bucket_name" {
-  description = "The name of the s3 bucket with the logs"
-}
-
-variable "bucket_encrypted_with_kms" {
-  default     = "false"
-  description = "If the log bucket is encrypted using AWS KMS Managed keys, specify true"
-}
-
 module "label" {
   source     = "git::https://github.com/cloudposse/terraform-terraform-label.git?ref=tags/0.1.2"
   namespace  = "${var.namespace}"
   stage      = "${var.stage}"
   name       = "${var.name}"
   attributes = "${var.attributes}"
-  delimiter  = "${var.delimiter}"
+  delimiter  = "_"
 }
 
 # Validate that the bucket exists by putting it in a data source
@@ -31,13 +12,13 @@ data "aws_s3_bucket" "default" {
   bucket = "${var.bucket_name}"
 }
 
-resource "aws_athena_database" "default" {
-  name   = "${module.label.id}-db"
+resource "aws_athena_database" "database" {
+  name   = "${module.label.id}_db"
   bucket = "${data.aws_s3_bucket.default.id}"
 }
 
 resource "aws_athena_named_query" "create_table" {
-  name     = "${module.label.id}-create-table"
+  name     = "${module.label.id}_create_table"
   database = "${aws_athena_database.database.name}"
 
   query = <<QUERYTEXT
@@ -69,16 +50,13 @@ WITH SERDEPROPERTIES (
 ) LOCATION 's3://${data.aws_s3_bucket.default.id}/${var.log_prefix}/'
 TBLPROPERTIES ('has_encrypted_data'='${var.bucket_encrypted_with_kms}');
 QUERYTEXT
-
-  lifecycle {
-    ignore_changes = ["query"]
-  }
 }
 
 resource "aws_athena_named_query" "requests_from_outside_vpc" {
-  name        = "${module.label.id}-outside-vpc"
+  name        = "${module.label.id}_outside_vpc"
   database    = "${aws_athena_database.database.name}"
   description = "Select all requests that came from outside your VPC subnet - EXAMPLE"
+  depends_on  = ["aws_athena_named_query.create_table"]
 
   query = <<QUERYTEXT
 /*
@@ -99,14 +77,15 @@ ORDER BY cnt DESC LIMIT 10
 QUERYTEXT
 
   lifecycle {
-    ignore_changes = ["query"]
+    ignore_changes = ["query", "description", "name"]
   }
 }
 
 resource "aws_athena_named_query" "requests_between_dates" {
-  name        = "${module.label.id}-requests-between-dates"
+  name        = "${module.label.id}_requests_between_dates"
   database    = "${aws_athena_database.database.name}"
   description = "Select all s3 requests between two dates - EXAMPLE"
+  depends_on  = ["aws_athena_named_query.create_table"]
 
   query = <<QUERYTEXT
 SELECT Requester , Operation ,  RequestDateTime
@@ -119,14 +98,15 @@ parse_datetime('2016-12-05:16:56:40','yyyy-MM-dd:HH:mm:ss');
 QUERYTEXT
 
   lifecycle {
-    ignore_changes = ["query"]
+    ignore_changes = ["query", "description", "name"]
   }
 }
 
 resource "aws_athena_named_query" "requests_for_specific_path" {
-  name        = "${module.label.id}-specific-s3-path"
+  name        = "${module.label.id}_specific_s3_path"
   database    = "${aws_athena_database.database.name}"
   description = "Get distinct s3 paths which were accessed - EXAMPLE"
+  depends_on  = ["aws_athena_named_query.create_table"]
 
   query = <<QUERYTEXT
 -- Get distinct s3paths which were accessed
@@ -135,14 +115,15 @@ FROM Accesslogs;
 QUERYTEXT
 
   lifecycle {
-    ignore_changes = ["query"]
+    ignore_changes = ["query", "description", "name"]
   }
 }
 
 resource "aws_athena_named_query" "requests_since_date_path" {
-  name        = "${module.label.id}-requests-since-date-s3-path"
+  name        = "${module.label.id}_requests_since_date_s3_path"
   database    = "${aws_athena_database.database.name}"
   description = "Get access count for each s3 path after a given timestamp - EXAMPLE"
+  depends_on  = ["aws_athena_named_query.create_table"]
 
   query = <<QUERYTEXT
 -- Get access count for each s3 path after a given timestamp
@@ -154,7 +135,7 @@ ORDER BY cnt DESC;
 QUERYTEXT
 
   lifecycle {
-    ignore_changes = ["query"]
+    ignore_changes = ["query", "description", "name"]
   }
 }
 
