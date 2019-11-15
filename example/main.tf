@@ -4,7 +4,7 @@ variable "region" {
 }
 
 provider "aws" {
-  region = "${var.region}"
+  region = var.region
 
   # Make it faster by skipping something
   skip_get_ec2_platforms      = true
@@ -30,7 +30,7 @@ module "athena" {
   stage       = "prod"
   name        = "s3logquery"
   log_prefix  = "weblog/"
-  bucket_name = "${module.log_storage.bucket_id}"
+  bucket_name = module.log_storage.bucket_id
 }
 
 resource "aws_s3_bucket" "web" {
@@ -44,13 +44,13 @@ resource "aws_s3_bucket" "web" {
   }
 
   logging {
-    target_bucket = "${module.log_storage.bucket_id}"
+    target_bucket = module.log_storage.bucket_id
     target_prefix = "weblog/"
   }
 }
 
 resource "aws_s3_bucket_policy" "b" {
-  bucket = "${aws_s3_bucket.web.id}"
+  bucket = aws_s3_bucket.web.id
 
   policy = <<POLICY
 {
@@ -68,28 +68,30 @@ resource "aws_s3_bucket_policy" "b" {
     ]
 }
 POLICY
+
 }
 
 resource "aws_s3_bucket_object" "index" {
-  bucket       = "${aws_s3_bucket.web.id}"
+  bucket       = aws_s3_bucket.web.id
   key          = "index.html"
   source       = "${path.module}/index.html"
   content_type = "text/html"
-  etag         = "${md5(file("${path.module}/index.html"))}"
+  etag         = filemd5("${path.module}/index.html")
 }
 
 resource "aws_s3_bucket_object" "error" {
-  bucket       = "${aws_s3_bucket.web.id}"
+  bucket       = aws_s3_bucket.web.id
   key          = "error.html"
   source       = "${path.module}/error.html"
   content_type = "text/html"
-  etag         = "${md5(file("${path.module}/error.html"))}"
+  etag         = filemd5("${path.module}/error.html")
 }
 
 output "url" {
-  value = "${aws_s3_bucket.web.website_endpoint}"
+  value = aws_s3_bucket.web.website_endpoint
 }
 
 output "athena_console" {
   value = "https://console.aws.amazon.com/athena/saved-queries/home?region=us-east-1"
 }
+
