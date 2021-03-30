@@ -32,108 +32,63 @@ resource "aws_athena_named_query" "create_table" {
   description = "Create the S3 logs query table"
 
   query = <<QUERYTEXT
-CREATE EXTERNAL TABLE IF NOT EXISTS ${aws_athena_database.database.name}.${module.label_table.id}(
-BucketOwner string,
-Bucket string,
-RequestDateTime string,
-RemoteIP string,
-Requester string,
-RequestID string,
-Operation string,
-Key string,
-RequestURI_operation string,
-RequestURI_key string,
-RequestURI_httpProtoversion string,
-HTTPstatus string,
-ErrorCode string,
-BytesSent string,
-ObjectSize string,
-TotalTime string,
-TurnAroundTime string,
-Referrer string,
-UserAgent string,
-VersionId string)
-ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.RegexSerDe'
-WITH SERDEPROPERTIES (
-'serialization.format' = '1',
-'input.regex' = '([^ ]*) ([^ ]*) \\[(.*?)\\] ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*) \\\"([^ ]*) ([^ ]*) (- |[^ ]*)\\\" (-|[0-9]*) (-|[0-9]*) ([-0-9]*) ([-0-9]*) ([-0-9]*) ([-0-9]*) ([^ ]*) (\"[^\"]*\") ([^ ]*)$'
-) LOCATION 's3://${data.aws_s3_bucket.default.id}/${local.log_prefix_normalised}/'
-TBLPROPERTIES ('has_encrypted_data'='${var.bucket_encrypted_with_kms}');
+CREATE EXTERNAL TABLE IF NOT EXISTS ${aws_athena_database.database.name}.${module.label_table.id} (
+            type string,
+            time string,
+            elb string,
+            client_ip string,
+            client_port int,
+            target_ip string,
+            target_port int,
+            request_processing_time double,
+            target_processing_time double,
+            response_processing_time double,
+            elb_status_code string,
+            target_status_code string,
+            received_bytes bigint,
+            sent_bytes bigint,
+            request_verb string,
+            request_url string,
+            request_proto string,
+            user_agent string,
+            ssl_cipher string,
+            ssl_protocol string,
+            target_group_arn string,
+            trace_id string,
+            domain_name string,
+            chosen_cert_arn string,
+            matched_rule_priority string,
+            request_creation_time string,
+            actions_executed string,
+            redirect_url string,
+            lambda_error_reason string,
+            target_port_list string,
+            target_status_code_list string,
+            classification string,
+            classification_reason string
+            )
+            ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.RegexSerDe'
+            WITH SERDEPROPERTIES (
+            'serialization.format' = '1',
+            'input.regex' = 
+        '([^ ]*) ([^ ]*) ([^ ]*) ([^ ]*):([0-9]*) ([^ ]*)[:-]([0-9]*) ([-.0-9]*) ([-.0-9]*) ([-.0-9]*) (|[-0-9]*) (-|[-0-9]*) ([-0-9]*) ([-0-9]*) \"([^ ]*) ([^ ]*) (- |[^ ]*)\" \"([^\"]*)\" ([A-Z0-9-]+) ([A-Za-z0-9.-]*) ([^ ]*) \"([^\"]*)\" \"([^\"]*)\" \"([^\"]*)\" ([-.0-9]*) ([^ ]*) \"([^\"]*)\" \"([^\"]*)\" \"([^ ]*)\" \"([^\s]+?)\" \"([^\s]+)\" \"([^ ]*)\" \"([^ ]*)\"')
+            LOCATION 's3://${data.aws_s3_bucket.default.id}/${local.log_prefix_normalised}/'
+            TBLPROPERTIES ('has_encrypted_data'='${var.bucket_encrypted_with_kms}');
 QUERYTEXT
-
 }
 
-resource "aws_athena_named_query" "requests_from_outside_vpc" {
-  name        = "${module.label.id}_outside_vpc"
-  database    = aws_athena_database.database.name
-  description = "Select all requests that came from outside your VPC subnet - EXAMPLE"
-  depends_on  = [aws_athena_named_query.create_table]
-
-  query = <<QUERYTEXT
-/*
-Query for access outside of AWS and your VPC
-Replace 172.31% with your VPC CIDR
-*/
-SELECT Key,
-        UserAgent,
-        RemoteIp,
-        count(*) AS cnt
-FROM ${module.label_table.id}
-WHERE regexp_like(RequestURI_operation, 'GET|HEAD')
-        AND Requester LIKE '-'
-        AND NOT regexp_like(UserAgent, 'Elastic|aws')
-        AND RemoteIp NOT LIKE '172.31%'
-GROUP BY  RemoteIp, Key, UserAgent, RemoteIp
-ORDER BY cnt DESC LIMIT 10
-QUERYTEXT
-
-}
-
-resource "aws_athena_named_query" "requests_between_dates" {
-  name        = "${module.label.id}_requests_between_dates"
-  database    = aws_athena_database.database.name
-  description = "Select all s3 requests between two dates - EXAMPLE"
-  depends_on  = [aws_athena_named_query.create_table]
-
-  query = <<QUERYTEXT
-SELECT Requester , Operation ,  RequestDateTime
-FROM ${module.label_table.id}
-WHERE Operation='REST.GET.OBJECT' AND
-parse_datetime(RequestDateTime,'dd/MMM/yyyy:HH:mm:ss Z') 
-BETWEEN parse_datetime('2016-12-05:16:56:36','yyyy-MM-dd:HH:mm:ss')
-AND 
-parse_datetime('2020-12-05:16:56:40','yyyy-MM-dd:HH:mm:ss');
-QUERYTEXT
-
-}
-
-resource "aws_athena_named_query" "requests_for_specific_path" {
-  name        = "${module.label.id}_specific_s3_path"
-  database    = aws_athena_database.database.name
-  description = "Get distinct s3 paths which were accessed - EXAMPLE"
-  depends_on  = [aws_athena_named_query.create_table]
-
-  query = <<QUERYTEXT
--- Get distinct s3paths which were accessed
-SELECT DISTINCT(Key) 
-FROM ${module.label_table.id};
-QUERYTEXT
-
-}
-
-resource "aws_athena_named_query" "requests_since_date_path" {
+resource "aws_athena_named_query" "logs_from_time" {
   name        = "${module.label.id}_requests_since_date_s3_path"
   database    = aws_athena_database.database.name
-  description = "Get access count for each s3 path after a given timestamp - EXAMPLE"
+  description = "Get logs for a timestamp - EXAMPLE"
   depends_on  = [aws_athena_named_query.create_table]
 
   query = <<QUERYTEXT
--- Get access count for each s3 path after a given timestamp
-SELECT key, count(*) AS cnt 
-FROM ${module.label_table.id} 
-WHERE parse_datetime(RequestDateTime,'dd/MMM/yyyy:HH:mm:ss Z')  > parse_datetime('2018-01-05:16:56:40','yyyy-MM-dd:HH:mm:ss')
-GROUP BY key
-ORDER BY cnt DESC;
+-- Get logs for given timestamp
+SELECT * 
+FROM ${module.label_table.id}
+WHERE time like '2021-03-30T08:2%'
+limit 20;
 QUERYTEXT
 
 }
