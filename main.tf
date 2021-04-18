@@ -30,6 +30,7 @@ resource "aws_athena_named_query" "create_table" {
   name        = "${module.label.id}_create_table"
   database    = aws_athena_database.database.name
   description = "Create the S3 logs query table"
+  workgroup   = var.workgroup
 
   query = <<QUERYTEXT
 CREATE EXTERNAL TABLE IF NOT EXISTS ${aws_athena_database.database.name}.${module.label_table.id} (
@@ -82,6 +83,7 @@ resource "aws_athena_named_query" "logs_from_time" {
   database    = aws_athena_database.database.name
   description = "Get logs for a timestamp - EXAMPLE"
   depends_on  = [aws_athena_named_query.create_table]
+  workgroup   = var.workgroup
 
   query = <<QUERYTEXT
 -- Get logs for given timestamp

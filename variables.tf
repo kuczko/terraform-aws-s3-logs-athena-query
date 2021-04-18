@@ -44,3 +44,6 @@ variable "bucket_encrypted_with_kms" {
   description = "If the log bucket is encrypted using AWS KMS Managed keys, specify true"
 }
 
+variable "workgroup" {
+  default = null
+}
